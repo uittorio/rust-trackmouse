@@ -17,7 +17,7 @@ pub mod event_listener {
                     match button {
                         Button::Left => {
                             // This fails. I am stupid!
-                            // s.send("button left pressed").expect("Error");
+                            s.send("button left pressed").expect("Error");
                         }
                         Button::Right => {
                             println!("button right pressed");

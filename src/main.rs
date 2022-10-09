@@ -1,8 +1,10 @@
-use std::cell::Cell;
-use std::rc::Rc;
+use std::borrow::Borrow;
+use std::sync::mpsc;
 
+use glib::PRIORITY_DEFAULT;
 use gtk::{Application, ApplicationWindow, Button, Label, Orientation};
-use gtk::glib::{clone, MainContext};
+use gtk::glib::MainContext;
+use gtk::glib::Receiver;
 use gtk::prelude::*;
 
 use crate::event_listener::event_listener::listen;
@@ -12,59 +14,60 @@ pub mod event_listener;
 const APP_ID: &str = "org.gtk_rs.mouseTracker";
 
 fn main() {
-    let main_context = MainContext::default();
+    let app = UiApplication {
+        app: Application::builder().application_id(APP_ID).build()
+    };
 
-    main_context.spawn(async {
-        listen();
-    });
-
-    let app = Application::builder().application_id(APP_ID).build();
-
-    app.connect_activate(build_ui);
     app.run();
 }
 
-fn build_ui(app: &Application) {
-    let label_value = "hello";
-    let label = Label::builder()
-        .label(label_value)
-        .margin_top(12)
-        .margin_bottom(12)
-        .margin_start(12)
-        .margin_end(12)
-        .build();
+struct UiApplication {
+    app: Application,
+}
 
-    label.set_label("Oh no, something else");
+impl UiApplication {
+    fn run(&self) {
+        &self.app.connect_activate(move |app: &Application| {
+            let (sender, receiver) = MainContext::channel(PRIORITY_DEFAULT);
 
-    let button_increase = Button::builder()
-        .label("Increase")
-        .margin_top(12)
-        .margin_bottom(12)
-        .margin_start(12)
-        .margin_end(12)
-        .build();
-    let button_decrease = Button::builder()
-        .label("Decrease")
-        .margin_top(12)
-        .margin_bottom(12)
-        .margin_start(12)
-        .margin_end(12)
-        .build();
+            let main_context = MainContext::default();
 
-    let gtk_box = gtk::Box::builder()
-        .orientation(Orientation::Vertical)
-        .build();
+            main_context.spawn(async move {
+                sender.send("hello").unwrap();
+                listen(sender);
+            });
+            let label_value = "Number of times you've used the mouse";
 
-    gtk_box.append(&button_increase);
-    gtk_box.append(&button_decrease);
-    gtk_box.append(&label);
+            let label = Label::builder()
+                .label(label_value)
+                .margin_top(12)
+                .margin_bottom(12)
+                .margin_start(12)
+                .margin_end(12)
+                .build();
 
-    let window = ApplicationWindow::builder()
-        .application(app)
-        .title("My GTK App")
-        .child(&gtk_box)
-        .build();
+            let gtk_box = gtk::Box::builder()
+                .orientation(Orientation::Vertical)
+                .build();
 
+            gtk_box.append(&label);
 
-    window.present();
+            receiver.attach(
+                None,
+                move |value| {
+                    label.set_label(value);
+                    Continue(true)
+                }
+            );
+
+            let window = ApplicationWindow::builder()
+                .application(app)
+                .title("Track mouse")
+                .child(&gtk_box)
+                .build();
+
+            window.present();
+        });
+        &self.app.run();
+    }
 }
